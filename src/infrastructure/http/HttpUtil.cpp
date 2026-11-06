@@ -33,6 +33,31 @@ namespace insoulforge::HttpUtil {
             }
         }
 
+        /// @brief 判断目标是否为 OpenCode Console 网关（opencode.ai 及其子域）。
+        auto isOpenCodeEndpoint(const std::string_view baseUrl) -> bool {
+            const size_t schemeEnd = baseUrl.find("://");
+            const size_t hostStart = schemeEnd == std::string_view::npos ? 0 : schemeEnd + 3;
+            size_t hostEnd = baseUrl.find_first_of("/:?#", hostStart);
+            if (hostEnd == std::string_view::npos)
+                hostEnd = baseUrl.size();
+            const std::string_view host = baseUrl.substr(hostStart, hostEnd - hostStart);
+            return host == "opencode.ai" || host.ends_with(".opencode.ai");
+        }
+
+        /// @brief OpenCode Console 用 x-opencode-session 保证同一段对话路由一致并命中 prompt cache。
+        /// @details 该值必须稳定：有会话时由会话 ID 派生，无会话的全局请求退化为固定值。
+        auto openCodeSessionHeader(const std::optional<SessionId> &sessionId) -> std::string {
+            std::string header = "ses_insoulforge";
+            if (!sessionId)
+                return header;
+            for (const char c: sessionId->toString()) {
+                const bool safe = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
+                                  c == '-' || c == '_';
+                header.push_back(safe ? c : '-');
+            }
+            return header;
+        }
+
         auto truncate(std::string s, const size_t max) -> std::string {
             if (s.size() <= max)
                 return s;
@@ -137,6 +162,10 @@ namespace insoulforge::HttpUtil {
         }
         if (!bearerToken.empty()) {
             req->addHeader("Authorization", "Bearer " + bearerToken);
+        }
+        // OpenCode Console 要求带会话头，否则跨请求无法复用 prompt cache。
+        if (isOpenCodeEndpoint(baseUrl)) {
+            req->addHeader("x-opencode-session", openCodeSessionHeader(sessionId));
         }
         const auto finishTrace = [&](const i32 statusCode, std::string responseBody) -> void {
             trace.status = statusCode;
