@@ -77,11 +77,19 @@ jobs:
         run: |
           VER=$(sed -n 's/^project(insoulforge VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
           echo "VERSION=$VER" >> "$GITHUB_ENV"
-          rm -rf dist && mkdir -p dist
-          cp -a build/insoulforge dist/insoulforge
+          rm -rf dist && mkdir -p dist/insoulforge/lib
+          cp -a build/insoulforge/. dist/insoulforge/
           cp -a agentTools dist/insoulforge/agentTools
+          # 把运行时依赖一并带上，避免目标机 soname 版本对不上
+          for lib in libcares.so.2 libgif.so.7 libjpeg.so.8 liblua5.4.so.0 libjsoncpp.so.25; do
+            cp -L "/usr/lib/x86_64-linux-gnu/$lib" dist/insoulforge/lib/ || echo "missing $lib"
+          done
+          printf '%s\n' '#!/bin/sh' 'cd "$(dirname "$0")" || exit 1' \
+            'export LD_LIBRARY_PATH="$PWD/lib:${LD_LIBRARY_PATH}"' \
+            'exec ./exe/insoulforge "$@"' > dist/insoulforge/run.sh
+          chmod +x dist/insoulforge/run.sh
           tar -C dist -czf "dist/insoulforge-$VER-linux-x64.tar.gz" insoulforge
-          ls -lh dist
+          du -sh dist/insoulforge && ls -lh dist
 
       - uses: actions/upload-artifact@v4
         with:
